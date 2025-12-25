@@ -1,0 +1,23 @@
+{
+  "name": "safe-vault",
+  "version": "1.0.0",
+  "description": "Type-safe localStorage wrapper with TTL support",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "localStorage",
+    "storage",
+    "ttl",
+    "typescript",
+    "cache"
+  ],
+  "license": "MIT"
+}
