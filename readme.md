@@ -1,14 +1,17 @@
 # SafeVault
 
-A type-safe localStorage wrapper with built-in TTL (Time To Live) support for browser environments.
+A type-safe localStorage wrapper with TTL, encryption, and reactive subscriptions for browser environments.
 
 ## Features
 
-- 🔒 **Type-safe**: Full TypeScript support with schema definitions
-- ⏰ **TTL Support**: Set automatic expiration times for stored data
-- 🛡️ **Error Handling**: Gracefully handles corrupted data and expired entries
-- 🪶 **Lightweight**: Zero dependencies
-- 🌐 **Storage Agnostic**: Works with both localStorage and sessionStorage
+- 🔒 Type-safe with full TypeScript support
+- ⏰ TTL (Time To Live) support with auto-expiration
+- 🔐 Optional encryption/decryption hooks
+- 📡 Reactive subscriptions for real-time updates
+- 🗂️ Namespaced keys with configurable prefix
+- 📦 Batch operations and import/export
+- 🛡️ Automatic error handling
+- 🪶 Zero dependencies
 
 ## Installation
 
@@ -16,152 +19,176 @@ A type-safe localStorage wrapper with built-in TTL (Time To Live) support for br
 npm install safe-vault
 ```
 
-```bash
-yarn add safe-vault
-```
-
-```bash
-pnpm add safe-vault
-```
-
-## Usage
-
-### Basic Example
+## Quick Start
 
 ```typescript
 import { SafeVault } from 'safe-vault';
 
-// Define your storage schema
 interface MySchema {
-  user: {
-    id: string;
-    name: string;
-  };
+  user: { id: string; name: string };
   token: string;
-  preferences: {
-    theme: 'light' | 'dark';
-  };
 }
 
-// Create an instance
 const vault = new SafeVault<MySchema>();
 
-// Set values
-vault.set('user', { id: '123', name: 'John Doe' });
-vault.set('token', 'abc123');
+// Basic operations
+vault.set('token', 'abc123', 3600000); // 1 hour TTL
+const token = vault.get('token');
+vault.remove('token');
+```
 
-// Get values
-const user = vault.get('user'); // Typed as { id: string; name: string } | null
-const token = vault.get('token'); // Typed as string | null
+## Configuration
 
-// Remove values
+```typescript
+const vault = new SafeVault<MySchema>(localStorage, {
+  prefix: 'app_',              // Default: 'sv_'
+  version: '1.3.0',            // Default: '1.0.0'
+  encryption: {
+    encrypt: (data) => btoa(data),
+    decrypt: (data) => atob(data)
+  },
+  onError: (error, op, key) => console.error(error)
+});
+```
+
+## Core API
+
+### Basic Operations
+
+```typescript
+// Set with optional TTL and metadata
+vault.set('user', userData, 3600000, { source: 'login' });
+
+// Get value (null if expired/missing)
+const user = vault.get('user');
+
+// Get with default
+const prefs = vault.getOrDefault('preferences', { theme: 'light' });
+
+// Check existence
+if (vault.has('token')) { /* ... */ }
+
+// Remove
 vault.remove('token');
 
-// Clear all storage
+// Clear all
 vault.clear();
 ```
 
-### TTL (Time To Live) Support
-
-Set expiration times for your data:
+### Conditional Operations
 
 ```typescript
-// Expire after 1 hour (3600000 milliseconds)
-vault.set('token', 'abc123', 3600000);
+// Set only if absent
+vault.setIfAbsent('config', { init: true });
 
-// Expire after 5 minutes
-vault.set('sessionData', { temp: true }, 5 * 60 * 1000);
-
-// When you try to get expired data, it returns null
-setTimeout(() => {
-  const token = vault.get('token'); // null (if expired)
-}, 3600001);
+// Update existing value
+vault.update('user', (u) => ({ ...u, lastSeen: Date.now() }));
 ```
 
-### Using sessionStorage
+### TTL Management
 
 ```typescript
-const sessionVault = new SafeVault<MySchema>(sessionStorage);
+// Get remaining TTL (ms)
+const ttl = vault.getTTL('token');
 
-sessionVault.set('temporaryData', { foo: 'bar' });
+// Extend TTL
+vault.extendTTL('token', 1800000); // +30 minutes
 ```
 
-## API Reference
-
-### Constructor
+### Subscriptions
 
 ```typescript
-new SafeVault<Schema>(storage?: Storage)
+const unsubscribe = vault.subscribe('user', (user) => {
+  console.log('User updated:', user);
+});
+
+// Later...
+unsubscribe();
 ```
 
-- `storage`: Optional. Defaults to `localStorage`. Can be `sessionStorage` or any Storage-compatible object.
+### Batch Operations
 
-### Methods
+```typescript
+// Get all keys/entries
+const keys = vault.keys();
+const entries = vault.entries();
 
-#### `set<K>(key: K, value: Schema[K], ttl?: number): void`
+// Remove multiple
+vault.removeMany(['key1', 'key2']);
 
-Store a value with optional TTL.
+// Export/Import
+const backup = vault.export();
+vault.import(backup, true); // merge = true
+```
 
-- `key`: The key from your schema
-- `value`: The value to store (must match schema type)
-- `ttl`: Optional. Time to live in milliseconds
+### Storage Management
 
-#### `get<K>(key: K): Schema[K] | null`
+```typescript
+// Get statistics
+const stats = vault.getStats();
+// { totalKeys, expiredKeys, size, keys }
 
-Retrieve a value. Returns `null` if the key doesn't exist or has expired.
+// Cleanup expired items
+const removed = vault.cleanupExpired();
 
-- `key`: The key from your schema
-- Returns: The stored value or `null`
+// Get metadata
+const meta = vault.getMetadata('token');
+```
 
-#### `remove<K>(key: K): void`
+## Migration from v1.0
 
-Remove a specific key from storage.
+**Breaking Changes:**
+- Keys are prefixed by default (`sv_`)
+- Constructor accepts options as second parameter
+- `set()` returns boolean
 
-- `key`: The key to remove
+```typescript
+// v1.0
+const vault = new SafeVault<Schema>(localStorage);
 
-#### `clear(): void`
+// v1.3.0 - with prefix
+const vault = new SafeVault<Schema>(localStorage, { prefix: 'app_' });
 
-Clear all items from storage.
-
-## Error Handling
-
-SafeVault automatically handles:
-
-- **Corrupted JSON**: If stored data can't be parsed, it's removed and `null` is returned
-- **Expired entries**: Automatically removed when accessed
-- **Missing keys**: Returns `null` gracefully
-
-## Browser Support
-
-SafeVault requires a browser environment with `localStorage` or `sessionStorage` support. It will throw an error if used in non-browser environments (like Node.js without polyfills).
+// v1.3.0 - no prefix (v1.0 behavior)
+const vault = new SafeVault<Schema>(localStorage, { prefix: '' });
+```
 
 ## TypeScript
 
-This package is written in TypeScript and includes type definitions. Your schema provides full autocomplete and type checking:
+Full type safety and autocomplete:
 
 ```typescript
-interface MySchema {
+interface Schema {
   count: number;
-  name: string;
 }
 
-const vault = new SafeVault<MySchema>();
+const vault = new SafeVault<Schema>();
 
-vault.set('count', 42); // ✅ OK
-vault.set('count', '42'); // ❌ Type error
-vault.set('invalid', 'value'); // ❌ Type error - key not in schema
+vault.set('count', 42);      // ✅
+vault.set('count', '42');    // ❌ Type error
+vault.set('invalid', 1);     // ❌ Not in schema
+```
 
-const count = vault.get('count'); // Type: number | null
+## Use Cases
+
+**Auth Token Management:**
+```typescript
+vault.set('accessToken', token, 15 * 60 * 1000);  // 15 min
+vault.set('refreshToken', refresh, 7 * 24 * 60 * 60 * 1000); // 7 days
+```
+
+**Form Draft Auto-Save:**
+```typescript
+setInterval(() => {
+  vault.set('draft', formData, 24 * 60 * 60 * 1000); // 24 hours
+}, 30000);
+```
+
+**Feature Flags:**
+```typescript
+vault.set('features', flags, 60 * 60 * 1000); // Cache 1 hour
 ```
 
 ## License
 
 MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Issues
-
-If you find a bug or have a feature request, please open an issue on GitHub.
